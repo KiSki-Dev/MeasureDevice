@@ -1,16 +1,17 @@
-//var apiURL = "http://127.0.0.1:8000/"
-var apiURL = "http://192.168.178.186:8000/"
+var apiURL = "http://192.168.178.186:8000/" // URL of the Middleman API
 
 const humidityData = [];
 const temperatureData = [];
 const heatIndexData = [];
 const lightData = [];
 const voltageData = [];
-var humidityChart = Chart;
+
+var humidityChart;
 var temperatureChart;
 var heatIndexChart;
 var lightChart;
 var voltageChart;
+
 var humidityUnit = {unit : "Min"};
 var temperatureUnit = {unit : "Min"};
 var heatIndexUnit = {unit : "Min"};
@@ -32,11 +33,11 @@ async function refreshAllData() {
 }
 
 function refreshAllCharts() {
-    updateChart("Luftfeuchtigkeit in %", humidityData, humidityChart)
-    updateChart("Temperatur in Celsius", temperatureData, temperatureChart)
-    updateChart("Hitzeindex in Celsius", heatIndexData, heatIndexChart)
-    updateChart("Helligkeit in %", lightData, lightChart)
-    updateChart("Stromspannung in Volt (V)", voltageData, voltageChart)
+    updateChart("Luftfeuchtigkeit in %", humidityData, humidityChart, humidityUnit.unit)
+    updateChart("Temperatur in Celsius", temperatureData, temperatureChart, temperatureUnit.unit)
+    updateChart("Hitzeindex in Celsius", heatIndexData, heatIndexChart, heatIndexUnit.unit)
+    updateChart("Helligkeit in %", lightData, lightChart, lightUnit.unit)
+    updateChart("Stromspannung in Volt (V)", voltageData, voltageChart, voltageUnit.unit)
 }
 
 function createAllCharts() {
@@ -97,7 +98,7 @@ async function refreshData(name, dataArray, selectedTime, unit) {
     document.getElementById("text-" + name).innerHTML = `${parseInt(rawData[0])}${unit} checked at ${formattedDate}.`;
 }
 
-function updateChart(labelText, dataArray, chartObj) {
+function updateChart(labelText, dataArray, chartObj, unit) {
     //console.log(dataArray);
     const data = { 
         datasets: [{
@@ -109,7 +110,10 @@ function updateChart(labelText, dataArray, chartObj) {
         }]
     };
 
-    chartObj.options.scales.x.time.min = Date.now() - (3600 * 1000); // unix timestamp in milisec from one hour ago
+    if (unit == "Day") {
+        chartObj.options.scales.x.displayFormats.second = 'dd.MM.yyyy';
+    }
+
     chartObj.data.datasets[0].data[data.length - 1] = dataArray[dataArray.length - 1];
     chartObj.update();
 }
@@ -138,7 +142,6 @@ function createChart(name, labelText, dataArray) {
                 type: 'time',
                 time: {
                   unit: 'second',
-                  min: Date.now() - (3600 * 1000), // unix timestamp from one hour ago
                   displayFormats: {
                     second: 'HH:mm'
                   },

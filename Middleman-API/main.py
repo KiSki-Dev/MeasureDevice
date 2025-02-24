@@ -3,17 +3,28 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import sqlite3
 import json
-import time
 import statistics
 from datetime import datetime
 import uvicorn
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
-from apscheduler.schedulers.background import BackgroundScheduler  # runs tasks in the background
+from enum import Enum
 
-arduinoURL = "http://192.168.178.43:4719" # URL to the Arduino
-dbURL = "PATH TO SQLTIE DATABASE"
+arduinoURL = "http://???.???.???.???:4719" # URL to the Arduino
+dbURL = "" # Path to SQLite Database
+uptime = 0
+
+class types(Enum):
+    humidity = 1
+    temperature = 2
+    heatIndex = 3
+    light = 4
+    voltage = 5
+
+class units(Enum):
+    Min = 1
+    Hours = 2
+    Days = 3
 
 # Set up the scheduler
 scheduler = AsyncIOScheduler()
@@ -34,13 +45,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# All API Routes
 @app.get("/")
 async def root():
-    return {"status": "Connection successful"}
+    return {"uptime": uptime - int(datetime.now().timestamp())}
 
-@app.get("/refresh")
-async def refresh():
-    status = await dbInsertData()
+@app.get("/force-refresh")
+async def forceRefreshData():
+    status = await refreshData()
     return json.loads(status)
 
 # Minute Data
@@ -95,6 +107,34 @@ async def send_voltageHour():
     data = await getDataFromDB("voltage", "Hours")
     return json.loads(data)
 
+# Day Data
+@app.get("/humidityDay")
+async def send_humidityHour():
+    data = await getDataFromDB("humidity", "Days")
+    return json.loads(data)
+
+@app.get("/temperatureDay")
+async def send_temperatureHour():
+    data = await getDataFromDB("temperature", "Days")
+    return json.loads(data)
+
+@app.get("/heatIndexDay")
+async def send_heatIndexHour():
+    data = await getDataFromDB("heatIndex", "Days")
+    return json.loads(data)
+
+@app.get("/lightDay")
+async def send_lightHour():
+    data = await getDataFromDB("light", "Days")
+    return json.loads(data)
+
+@app.get("/voltageDay")
+async def send_voltageHour():
+    data = await getDataFromDB("voltage", "Days")
+    return json.loads(data)
+
+
+# Functions
 async def getDataFromDB(name, timeUnit):
     conn = sqlite3.connect(dbURL)
     cur = conn.cursor()
@@ -104,141 +144,116 @@ async def getDataFromDB(name, timeUnit):
     conn.close()
     return json.dumps(rows)
 
-async def dbInsertData():
+async def refreshData():
     conn = sqlite3.connect(dbURL)
     cur = conn.cursor();
 
-    # conn.execute('''CREATE TABLE IF NOT EXISTS temperatureMin
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS lightMin
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS humidityMin
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS heatIndexMin
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS voltageMin
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-
-    # conn.execute('''CREATE TABLE IF NOT EXISTS temperatureHours
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS lightHours
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS humidityHours
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS heatIndexHours
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-    # conn.execute('''CREATE TABLE IF NOT EXISTS voltageHours
-    #                 (value INT, timestamp INT, id INTEGER PRIMARY KEY)''')
-
-    # To-Do make Enums for easierer
+    status = {}
 
     unix = int(datetime.now().timestamp())
 
-    humidity = await getDataFromAPI("humidity")
-    if (int(humidity["value"]) < 101):
-        cur.execute(''' INSERT INTO humidityMin(value,timestamp)
-                VALUES(?,?) ''', (humidity["value"], unix))
-    await checkAmount(conn, "humidityMin", "humidityHours")
+    for type in types:
+        apiData = await getDataFromArduino(type.name)
+        status[type.name] = float(apiData["value"])
+        if (float(apiData["value"]) < 101): # Check if value is not wrong (e.g. 1000%)
+            cur.execute(f''' INSERT INTO {type.name}Min(value,timestamp)
+                VALUES(?,?) ''', (apiData["value"], unix))
+        await checkAmount(conn, f"{type.name}", "Min")
 
-    temperature = await getDataFromAPI("temperature")
-    if (int(temperature["value"]) < 60):
-        cur.execute(''' INSERT INTO temperatureMin(value,timestamp)
-                VALUES(?,?) ''', (temperature["value"], unix))
-    await checkAmount(conn, "temperatureMin", "temperatureHours")
-
-    heatIndex = await getDataFromAPI("heatIndex")
-    if (int(heatIndex["value"]) < 60):
-        cur.execute(''' INSERT INTO heatIndexMin(value,timestamp)
-                VALUES(?,?) ''', (heatIndex["value"], unix))
-    await checkAmount(conn, "heatIndexMin", "heatIndexHours")
-
-    light = await getDataFromAPI("light")
-    if (int(light["value"]) < 101):
-        cur.execute(''' INSERT INTO lightMin(value,timestamp)
-                VALUES(?,?) ''', (light["value"], unix))
-    await checkAmount(conn, "lightMin", "lightHours")
-
-    voltage = await getDataFromAPI("voltage")
-    if (float(voltage["value"]) < 60.00):
-        cur.execute(''' INSERT INTO voltageMin(value,timestamp)
-                VALUES(?,?) ''', (voltage["value"], unix))
-    await checkAmount(conn, "voltageMin", "voltageHours")
+    for type in types:
+        await checkAmount(conn, f"{type.name}", "Hours")
 
     conn.commit()
     print("Added Row. ID: " + str(cur.lastrowid))
     cur.close()
     conn.close()
-    return json.dumps({"humidity": humidity["value"], "temperature": temperature["value"], "heatIndex": heatIndex["value"], "light": light["value"], "voltage": voltage["value"]})
+    return json.dumps(status)
 
-async def getDataFromAPI(api):
+async def getDataFromArduino(api):
     resp = requests.get(arduinoURL + '/' + api)
     if (resp.status_code == 200):
         respJSON = json.loads(resp.text)
         return respJSON
+    else:
+        return {"value": 100000}
 
-async def checkAmount(conn, tableName, nextTable):
+# Check if a amount is worthy to be averaged or to be deleted of the unit
+async def checkAmount(conn, tableName, unit):
+    cur = conn.cursor();
+    cur.execute(f"SELECT * FROM {tableName}{unit}")
+    rows = cur.fetchall()
+
+    currentTimestamp = int(datetime.now().timestamp())
     toDeleteIDs = []
     toAverage = []
     allowAverage = False
 
-    cur = conn.cursor();
-    cur.execute(f"SELECT * FROM {tableName}")
-    rows = cur.fetchall()
+    if (unit == "Min"):
+        maxTime = 7300 # ~2 hours
+        minTime = 3700 # ~1 hour
+        betweenTime = 7150 # ~2 hours - 10 minutes
+    elif (unit == "Hours"):
+        maxTime = 173800 # ~2 days
+        minTime = 87400 # ~1 day
+        betweenTime = 164160 # ~1,8 days
 
     for row in rows:
-        # print(str(row))
-        timestampAgo = int(int(datetime.now().timestamp()) - int(row[1]))
+        timestampAgo = int(currentTimestamp - row[1])
 
-        if (timestampAgo > 7300): # if older then 2 ~hours
+        if (timestampAgo > maxTime):
             toDeleteIDs.append(row[2])
 
-        if (3700 <= timestampAgo <= 7300): # Check if timestamp is not older then 2 ~hours
+        if (minTime <= timestampAgo <= maxTime): # Check if timestamp is not older then max Time
             toAverage.append(row)
-            if (7200 <= timestampAgo <= 7300):
+            if (betweenTime <= timestampAgo <= maxTime):
                 allowAverage = True
 
-
     if (allowAverage): 
-        await AverageAndSave(conn, nextTable, toAverage)
+        await AverageAndSave(conn, tableName, units(units[unit].value + 1).name, toAverage)
         for row in toAverage:
             toDeleteIDs.append(row[2])
     
-    await deleteValues(conn, tableName, toDeleteIDs)
+    await deleteValues(conn, tableName, unit, toDeleteIDs)
 
-async def AverageAndSave(conn, tableName, averageValues):
+# Gets average of a List of values and saves it to the database in the next unit's table
+async def AverageAndSave(conn, tableName, unit, averageValues): # Unit = next unit (e.g. previous Min -> Hours)
     if (len(averageValues) > 1):
         values = []
         for value in averageValues:
             values.append(value[0])
 
         average = round(statistics.mean(values), 2)
-        print(f"{tableName}s Average is {average}")
         cur = conn.cursor();
 
         now = datetime.now()
-        nowRounded = now.replace(minute=0, second=0, microsecond=0)
+        if (unit == "Hours"):
+            nowRounded = now.replace(minute=0, second=0, microsecond=0)
+        elif (unit == "Days"):
+            nowRounded = now.replace(hour=0, minute=0, second=0, microsecond=0)
         unix = int(nowRounded.timestamp())
 
-        cur.execute(f''' INSERT INTO {tableName}(value,timestamp)
+        cur.execute(f''' INSERT INTO {tableName}{unit}(value,timestamp)
                 VALUES(?,?) ''', (average, unix))
         conn.commit()
-        print(f"Added Row to {tableName}. ID: {cur.lastrowid}")
+        print(f"{tableName}{unit}'s Average is {average}. Row ID: {cur.lastrowid}")
         return True
     return False
 
-async def deleteValues(conn, tableName, deleteIDs):
+# Deletes old and unused values from the database table
+async def deleteValues(conn, tableName, unit, deleteIDs):
     cur = conn.cursor();
-    query = "DELETE FROM " + tableName + " WHERE id IN ({})".format(", ".join("?" * len(deleteIDs)))
+    query = "DELETE FROM " + tableName + unit + " WHERE id IN ({})".format(", ".join("?" * len(deleteIDs)))
     cur.execute(query, deleteIDs)
-    print(f"Removed {len(deleteIDs)} Rows from {tableName}. Last row ID: {cur.lastrowid}")
+    print(f"Removed {len(deleteIDs)} Rows from {tableName}{unit}. Last row ID: {cur.lastrowid}")
     conn.commit()
 
 
 @scheduler.scheduled_job(trigger="interval", seconds=60)
-async def refreshData():
-    status = await dbInsertData()
+async def refreshDataJob():
+    status = await refreshData()
     print(str(status))
 
 
 if __name__ == '__main__':
+    uptime = int(datetime.now().timestamp())
     uvicorn.run(app, host="0.0.0.0", port=8000)
