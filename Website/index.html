@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Felix Messgerät</title>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@^3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@^2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@^1"></script>
+  </head>
+
+  <body>
+    <div class="container">
+      <!-- Seitenleiste -->
+      <nav class="sidebar">
+        <button type="button-init" class="button-init" onclick="createAllCharts(); this.style.display = 'none'; refreshAll()">Start automatic Data Tracking (Debug)</button>
+      </nav>
+
+      <!-- Hauptbereich -->
+      <div class="main-content">
+        <header>
+          <h1>Felix Messgerät Website</h1>
+          <button type="button-refreshAll" onclick="refreshAll()">Refresh all</button>
+        </header>
+
+        <div class="row">
+          <!-- Luftfeuchtigkeit Column -->
+          <div class="column">
+            <h2>Luftfeuchtigkeit</h2>
+            <button type="button-humidity" onclick="refreshData('humidity', humidityData, 'Min', '%')">Refresh</button>
+            <p id="text-humidity" class="data-display">No Data - Last updated: N/A</p>
+            <canvas id="humidityChart" class="chart"></canvas>
+            <div class="button-container">
+              <button id="humidity-Min" class="button" onclick="changeUnit('humidity', 'Min', humidityUnit)" style="background: #c7a302c2; font-weight: bold;">Minute</button>
+              <button id="humidity-Hour" class="button" onclick="changeUnit('humidity', 'Hour', humidityUnit)">Hour</button>
+            </div>
+          </div>
+          
+          <!-- Temperatur Column -->
+          <div class="column">
+            <h2>Temperatur</h2>
+            <button type="button-temperature" onclick="refreshData('temperature', temperatureData, 'Min', '°C')">Refresh</button>
+            <p id="text-temperature" class="data-display">No Data - Last updated: N/A</p>
+            <canvas id="temperatureChart" class="chart"></canvas>
+            <div class="button-container">
+              <button id="temperature-Min" class="button" onclick="changeUnit('temperature', 'Min', temperatureUnit)" style="background: #c7a302c2; font-weight: bold;">Minute</button>
+              <button id="temperature-Hour" class="button" onclick="changeUnit('temperature', 'Hour', temperatureUnit)">Hour</button>
+            </div>
+          </div>
+
+          <!-- Hitzeindex Column -->
+          <div class="column">
+            <h2>Hitzeindex</h2>
+            <button type="button-heatIndex" onclick="refreshData('heatIndex', heatIndexData, 'Min', '°C')">Refresh</button>
+            <p id="text-heatIndex" class="data-display">No Data - Last updated: N/A</p>
+            <canvas id="heatIndexChart" class="chart"></canvas>
+            <div class="button-container">
+              <button id="heatIndex-Min" class="button" onclick="changeUnit('heatIndex', 'Min', heatIndexUnit)" style="background: #c7a302c2; font-weight: bold;">Minute</button>
+              <button id="heatIndex-Hour" class="button" onclick="changeUnit('heatIndex', 'Hour', heatIndexUnit)">Hour</button>
+            </div>
+          </div>
+          
+          <!-- Helligkeit Column -->
+          <div class="column">
+            <h2>Helligkeit</h2>
+            <button type="button-light" onclick="refreshData('light', lightData, 'Min', '%')">Refresh</button>
+            <p id="text-light" class="data-display">No Data - Last updated: N/A</p>
+            <canvas id="lightChart" class="chart"></canvas>
+            <div class="button-container">
+              <button id="light-Min" class="button" onclick="changeUnit('light', 'Min', lightUnit)" style="background: #c7a302c2; font-weight: bold;">Minute</button>
+              <button id="light-Hour" class="button" onclick="changeUnit('light', 'Hour', lightUnit)">Hour</button>
+            </div>
+          </div>
+          
+          <!-- Stromspannung Column -->
+          <div class="column">
+            <h2>Stromspannung</h2>
+            <button type="button-voltage" onclick="refreshData('voltage', voltageData, 'Min', 'V')">Refresh</button>
+            <p id="text-voltage" class="data-display">No Data - Last updated: N/A</p>
+            <canvas id="voltageChart" class="chart"></canvas>
+            <div class="button-container">
+              <button id="voltage-Min" class="button" onclick="changeUnit('voltage', 'Min', voltageUnit)" style="background: #c7a302c2; font-weight: bold;">Minute</button>
+              <button id="voltage-Hour" class="button" onclick="changeUnit('voltage', 'Hour', voltageUnit)">Hour</button>
+            </div>
+          </div>
+
+          <!-- Leerer Platz für zukünftige Elemente -->
+          <div class="column">
+            <!-- Hier kannst du zukünftige Inhalte einfügen -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

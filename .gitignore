@@ -1,6 +1,12 @@
 # Created by https://www.toptal.com/developers/gitignore/api/platformio,visualstudiocode,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=platformio,visualstudiocode,python
 
+### Custom Ignores ###
+Arduino Code/.vscode/
+Arduino Code/test/
+Arduino Code/include/
+
+
 ### PlatformIO ###
 .pioenvs
 .piolibdeps
