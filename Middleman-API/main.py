@@ -134,7 +134,7 @@ async def send_voltageHour():
     return json.loads(data)
 
 
-# Functions
+#* Functions
 async def getDataFromDB(name, timeUnit):
     conn = sqlite3.connect(dbURL)
     cur = conn.cursor()
@@ -145,6 +145,7 @@ async def getDataFromDB(name, timeUnit):
     return json.dumps(rows)
 
 async def refreshData():
+    print("-"*11 + str(datetime.now()) + "-"*11)
     conn = sqlite3.connect(dbURL)
     cur = conn.cursor();
 
@@ -158,10 +159,11 @@ async def refreshData():
         if (float(apiData["value"]) < 101): # Check if value is not wrong (e.g. 1000%)
             cur.execute(f''' INSERT INTO {type.name}Min(value,timestamp)
                 VALUES(?,?) ''', (apiData["value"], unix))
-        await checkAmount(conn, f"{type.name}", "Min")
+            
+        await checkMinAmount(conn, f"{type.name}Min", f"{type.name}Hours")
 
     for type in types:
-        await checkAmount(conn, f"{type.name}", "Hours")
+        await checkHoursAmount(conn, f"{type.name}Hours", f"{type.name}Days")
 
     conn.commit()
     print("Added Row. ID: " + str(cur.lastrowid))
@@ -177,82 +179,105 @@ async def getDataFromArduino(api):
     else:
         return {"value": 100000}
 
-# Check if a amount is worthy to be averaged or to be deleted of the unit
-async def checkAmount(conn, tableName, unit):
-    cur = conn.cursor();
-    cur.execute(f"SELECT * FROM {tableName}{unit}")
-    rows = cur.fetchall()
-
-    currentTimestamp = int(datetime.now().timestamp())
+#! Check if a amount is worthy to be averaged or to be deleted (Min Data)
+async def checkMinAmount(conn, tableName, nextTable):
     toDeleteIDs = []
     toAverage = []
     allowAverage = False
 
-    if (unit == "Min"):
-        maxTime = 7300 # ~2 hours
-        minTime = 3700 # ~1 hour
-        betweenTime = 7150 # ~2 hours - 10 minutes
-    elif (unit == "Hours"):
-        maxTime = 173800 # ~2 days
-        minTime = 87400 # ~1 day
-        betweenTime = 164160 # ~1,8 days
+    cur = conn.cursor();
+    cur.execute(f"SELECT * FROM {tableName}")
+    rows = cur.fetchall()
+    nowTS = int(datetime.now().timestamp())
 
     for row in rows:
-        timestampAgo = int(currentTimestamp - row[1])
+        timestampAgo = int(nowTS - int(row[1]))
 
-        if (timestampAgo > maxTime):
+        if (timestampAgo > 7300): # if older then ~2 hours
             toDeleteIDs.append(row[2])
 
-        if (minTime <= timestampAgo <= maxTime): # Check if timestamp is not older then max Time
+        if (3700 <= timestampAgo <= 7300): # Check if timestamp is not older then ~2 hours
             toAverage.append(row)
-            if (betweenTime <= timestampAgo <= maxTime):
+            if (7200 <= timestampAgo <= 7300): # If any value is older then ~1,9 hours and younger then ~2,1 hours
                 allowAverage = True
 
     if (allowAverage): 
-        await AverageAndSave(conn, tableName, units(units[unit].value + 1).name, toAverage)
+        await AverageAndSave(conn, nextTable, toAverage, "Min")
         for row in toAverage:
             toDeleteIDs.append(row[2])
     
-    await deleteValues(conn, tableName, unit, toDeleteIDs)
+    await deleteValues(conn, tableName, toDeleteIDs)
 
-# Gets average of a List of values and saves it to the database in the next unit's table
-async def AverageAndSave(conn, tableName, unit, averageValues): # Unit = next unit (e.g. previous Min -> Hours)
-    if (len(averageValues) > 1):
+#! Check if a amount is worthy to be averaged or to be deleted (Hours Data)
+async def checkHoursAmount(conn, tableName, nextTable):
+    toDeleteIDs = []
+    toAverage = []
+    allowAverage = False
+
+    cur = conn.cursor();
+    cur.execute(f"SELECT * FROM {tableName}")
+    rows = cur.fetchall()
+    nowTS = int(datetime.now().timestamp())
+
+    for row in rows:
+        timestampAgo = int(nowTS - int(row[1]))
+
+        if (timestampAgo > 178200): # if older then ~2 days
+            toDeleteIDs.append(row[2])
+
+        if (88128 <= timestampAgo <= 178200): # Check if timestamp is not older then 49,5 hours
+            toAverage.append(row)
+            if (172260 <= timestampAgo <= 178200): # If any value is older then 47,5 hours and younger then 49,5 hours
+                allowAverage = True
+
+    if (allowAverage): 
+        await AverageAndSave(conn, nextTable, toAverage, "Hours")
+        for row in toAverage:
+            toDeleteIDs.append(row[2])
+    
+    await deleteValues(conn, tableName, toDeleteIDs)
+
+#! Gets average of a List of values and saves it to the database in the next unit's table
+async def AverageAndSave(conn, tableName, averageValues, toReplace):
+    if (len(averageValues) > 1): # Check if there are enough values to average
         values = []
         for value in averageValues:
             values.append(value[0])
 
         average = round(statistics.mean(values), 2)
+        print(f"{tableName}s Average is {average}")
         cur = conn.cursor();
 
         now = datetime.now()
-        if (unit == "Hours"):
+        if (toReplace == "Min"):
             nowRounded = now.replace(minute=0, second=0, microsecond=0)
-        elif (unit == "Days"):
+        elif (toReplace == "Hours"):
             nowRounded = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            nowRounded = now.replace(day=0, hour=0, minute=0, second=0, microsecond=0)
         unix = int(nowRounded.timestamp())
 
-        cur.execute(f''' INSERT INTO {tableName}{unit}(value,timestamp)
+        cur.execute(f''' INSERT INTO {tableName}(value,timestamp)
                 VALUES(?,?) ''', (average, unix))
         conn.commit()
-        print(f"{tableName}{unit}'s Average is {average}. Row ID: {cur.lastrowid}")
+        print(f"Added Row to {tableName}. ID: {cur.lastrowid}")
         return True
     return False
 
-# Deletes old and unused values from the database table
-async def deleteValues(conn, tableName, unit, deleteIDs):
+#! Deletes a list of values from a table
+async def deleteValues(conn, tableName, deleteIDs):
     cur = conn.cursor();
-    query = "DELETE FROM " + tableName + unit + " WHERE id IN ({})".format(", ".join("?" * len(deleteIDs)))
+    query = "DELETE FROM " + tableName + " WHERE id IN ({})".format(", ".join("?" * len(deleteIDs)))
     cur.execute(query, deleteIDs)
-    print(f"Removed {len(deleteIDs)} Rows from {tableName}{unit}. Last row ID: {cur.lastrowid}")
+    print(f"Removed {len(deleteIDs)} Rows from {tableName}. Last row ID: {cur.lastrowid}")
     conn.commit()
+
 
 
 @scheduler.scheduled_job(trigger="interval", seconds=60)
 async def refreshDataJob():
     status = await refreshData()
     print(str(status))
-
 
 if __name__ == '__main__':
     uptime = int(datetime.now().timestamp())
