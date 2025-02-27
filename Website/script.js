@@ -1,4 +1,4 @@
-var apiURL = "http://192.168.178.186:8000/" // URL of the Middleman API
+var apiURL = "http://???.???.???.???:8000/" // URL of the Middleman API
 
 const humidityData = [];
 const temperatureData = [];
@@ -29,7 +29,7 @@ async function refreshAllData() {
     refreshData("temperature", temperatureData, temperatureUnit.unit, "°C");
     refreshData("heatIndex", heatIndexData, heatIndexUnit.unit, "°C");
     refreshData("light", lightData, lightUnit.unit, "%");
-    refreshData("voltage", voltageData, voltageUnit.unit, "V");
+    await refreshData("voltage", voltageData, voltageUnit.unit, "V");
 }
 
 function refreshAllCharts() {
@@ -40,14 +40,16 @@ function refreshAllCharts() {
     updateChart("Stromspannung in Volt (V)", voltageData, voltageChart, voltageUnit.unit)
 }
 
-function createAllCharts() {
+async function createAllCharts() {
     humidityChart = createChart("humidity", "Luftfeuchtigkeit in %", humidityData)
     temperatureChart = createChart("temperature", "Temperatur in Celsius", temperatureData)
     heatIndexChart = createChart("heatIndex", "Hitzeindex in Celsius", heatIndexData)
     lightChart = createChart("light", "Helligkeit in %", lightData)
-    voltageChart = createChart("voltage", "Stromspannung in Volt (V)", voltageData)
+    voltageChart = await createChart("voltage", "Stromspannung in Volt (V)", voltageData)
 
     setInterval(refreshAll, (61 * 1000)); // Execute every 61 seconds
+
+    await refreshAll();
 }
 
 function changeUnit(name, unit, variable) {
@@ -56,7 +58,7 @@ function changeUnit(name, unit, variable) {
 
     document.getElementById(name + "-" + oldUnit).style = "background: #4CAF50; font-weight: normal"; // Set to normal
     document.getElementById(name + "-" + unit).style = "background: #c7a302c2; font-weight: bold"; // Set to pressed
-    refreshAllData();
+    
     refreshAll();
 }
 
@@ -81,7 +83,7 @@ async function refreshData(name, dataArray, selectedTime, unit) {
         console.error('There was a problem with the fetch operation:', error);
     })
 
-    while(dataArray.length > 0) {
+    while(dataArray.length != 0) {
         dataArray.pop(); // Clear Array before refilling it
     }
     for (var i = 0; i < rawData.length; i++){
@@ -110,8 +112,20 @@ function updateChart(labelText, dataArray, chartObj, unit) {
         }]
     };
 
-    if (unit == "Day") {
-        chartObj.options.scales.x.displayFormats.second = 'dd.MM.yyyy';
+    if (unit == "Min") {
+        chartObj.options.scales.x.time.displayFormats.second = 'HH:mm';
+        chartObj.options.scales.x.min = Date.now() - (60 * 60 * 1000); // 60 minutes in ms
+    }
+    else if (unit == "Hour") {
+        chartObj.options.scales.x.time.unit = "minute";
+        chartObj.options.scales.x.time.displayFormats.minute = 'HH:mm';
+        chartObj.options.scales.x.min = Date.now() - (24 * 60 * 60 * 1000); // 24 hours in ms
+    }
+
+    else if (unit == "Day") {
+        chartObj.options.scales.x.time.unit = "hour";
+        chartObj.options.scales.x.time.displayFormats.hour = 'dd.MM';
+        chartObj.options.scales.x.min = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 days in ms
     }
 
     chartObj.data.datasets[0].data[data.length - 1] = dataArray[dataArray.length - 1];
@@ -147,6 +161,7 @@ function createChart(name, labelText, dataArray) {
                   },
                   tooltipFormat: 'dd.MM.yyyy HH:mm:ss'
                 },
+                min: Date.now() - (60 * 60 * 1000), // 60 minutes in ms
                 title: {
                     display: true,
                     text: 'Zeit'
@@ -156,15 +171,14 @@ function createChart(name, labelText, dataArray) {
                 title: {
                     display: true,
                     text: 'Werte'
+                },
+                ticks: {
+                    precision: 1
                 }
             }
           },
         },
     });
-
-    if (name != "voltage") {
-        chartObj.options.scales.y.ticks.precision = 0;
-    }
 
     return chartObj;
 }

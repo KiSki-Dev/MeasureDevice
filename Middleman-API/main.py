@@ -21,11 +21,6 @@ class types(Enum):
     light = 4
     voltage = 5
 
-class units(Enum):
-    Min = 1
-    Hours = 2
-    Days = 3
-
 # Set up the scheduler
 scheduler = AsyncIOScheduler()
 
@@ -271,8 +266,6 @@ async def deleteValues(conn, tableName, deleteIDs):
     cur.execute(query, deleteIDs)
     print(f"Removed {len(deleteIDs)} Rows from {tableName}. Last row ID: {cur.lastrowid}")
     conn.commit()
-
-
 
 @scheduler.scheduled_job(trigger="interval", seconds=60)
 async def refreshDataJob():
