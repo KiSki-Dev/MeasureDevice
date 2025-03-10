@@ -7,10 +7,9 @@ import statistics
 from datetime import datetime
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from contextlib import asynccontextmanager
 from enum import Enum
 
-arduinoURL = "http://???.???.???.???:4719" # URL to the Arduino
+arduinoURL = "http://:4719" # URL to the Arduino
 dbURL = "" # Path to SQLite Database
 uptime = 0
 
@@ -21,16 +20,20 @@ class types(Enum):
     light = 4
     voltage = 5
 
+app = FastAPI()
+
 # Set up the scheduler
 scheduler = AsyncIOScheduler()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+@app.on_event("startup")
+async def startup_event():
+    print("Starting Scheduler")
     scheduler.start()
-    yield
-    scheduler.shutdown()
 
-app = FastAPI(lifespan=lifespan)
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("Stopping Scheduler")
+    scheduler.shutdown()
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,7 +46,7 @@ app.add_middleware(
 # All API Routes
 @app.get("/")
 async def root():
-    return {"uptime": uptime - int(datetime.now().timestamp())}
+    return {"uptime": int(datetime.now().timestamp()) - uptime}
 
 @app.get("/force-refresh")
 async def forceRefreshData():
@@ -128,6 +131,32 @@ async def send_voltageHour():
     data = await getDataFromDB("voltage", "Days")
     return json.loads(data)
 
+# Month Data
+@app.get("/humidityMonth")
+async def send_humidityHour():
+    data = await getDataFromDB("humidity", "Months")
+    return json.loads(data)
+
+@app.get("/temperatureMonth")
+async def send_temperatureHour():
+    data = await getDataFromDB("temperature", "Months")
+    return json.loads(data)
+
+@app.get("/heatIndexMonth")
+async def send_heatIndexHour():
+    data = await getDataFromDB("heatIndex", "Months")
+    return json.loads(data)
+
+@app.get("/lightMonth")
+async def send_lightHour():
+    data = await getDataFromDB("light", "Months")
+    return json.loads(data)
+
+@app.get("/voltageMonth")
+async def send_voltageHour():
+    data = await getDataFromDB("voltage", "Months")
+    return json.loads(data)
+
 
 #* Functions
 async def getDataFromDB(name, timeUnit):
@@ -151,7 +180,7 @@ async def refreshData():
     for type in types:
         apiData = await getDataFromArduino(type.name)
         status[type.name] = float(apiData["value"])
-        if (float(apiData["value"]) < 101): # Check if value is not wrong (e.g. 1000%)
+        if (-101 < float(apiData["value"]) < 101): # Check if value is not wrong (e.g. 1000%)
             cur.execute(f''' INSERT INTO {type.name}Min(value,timestamp)
                 VALUES(?,?) ''', (apiData["value"], unix))
             
@@ -159,6 +188,9 @@ async def refreshData():
 
     for type in types:
         await checkHoursAmount(conn, f"{type.name}Hours", f"{type.name}Days")
+    
+    for type in types:
+        await checkDaysAmount(conn, f"{type.name}Days", f"{type.name}Months")
 
     conn.commit()
     print("Added Row. ID: " + str(cur.lastrowid))
@@ -232,6 +264,35 @@ async def checkHoursAmount(conn, tableName, nextTable):
     
     await deleteValues(conn, tableName, toDeleteIDs)
 
+#! Check if a amount is worthy to be averaged or to be deleted (Days Data)
+async def checkDaysAmount(conn, tableName, nextTable):
+    toDeleteIDs = []
+    toAverage = []
+    allowAverage = False
+
+    cur = conn.cursor();
+    cur.execute(f"SELECT * FROM {tableName}")
+    rows = cur.fetchall()
+    nowTS = int(datetime.now().timestamp())
+
+    for row in rows:
+        timestampAgo = int(nowTS - int(row[1]))
+
+        if (timestampAgo > 5387400): # if older then ~2 months
+            toDeleteIDs.append(row[2])
+
+        if (2680563 <= timestampAgo <= 5387400): # Check if timestamp is not older then ~2 months
+            toAverage.append(row)
+            if (5237609 <= timestampAgo <= 5387400): # If any value is older then ~1,992 months and younger then ~2,04 months
+                allowAverage = True
+
+    if (allowAverage): 
+        await AverageAndSave(conn, nextTable, toAverage, "Days")
+        for row in toAverage:
+            toDeleteIDs.append(row[2])
+    
+    await deleteValues(conn, tableName, toDeleteIDs)
+
 #! Gets average of a List of values and saves it to the database in the next unit's table
 async def AverageAndSave(conn, tableName, averageValues, toReplace):
     if (len(averageValues) > 1): # Check if there are enough values to average
@@ -240,6 +301,9 @@ async def AverageAndSave(conn, tableName, averageValues, toReplace):
             values.append(value[0])
 
         average = round(statistics.mean(values), 2)
+        if (-100 < average < 101):
+            return False
+
         print(f"{tableName}s Average is {average}")
         cur = conn.cursor();
 
@@ -248,8 +312,10 @@ async def AverageAndSave(conn, tableName, averageValues, toReplace):
             nowRounded = now.replace(minute=0, second=0, microsecond=0)
         elif (toReplace == "Hours"):
             nowRounded = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif (toReplace == "Days"):
+            nowRounded = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         else:
-            nowRounded = now.replace(day=0, hour=0, minute=0, second=0, microsecond=0)
+            nowRounded = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         unix = int(nowRounded.timestamp())
 
         cur.execute(f''' INSERT INTO {tableName}(value,timestamp)

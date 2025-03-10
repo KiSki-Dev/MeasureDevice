@@ -1,4 +1,4 @@
-var apiURL = "http://???.???.???.???:8000/" // URL of the Middleman API
+var apiURL = "http://:8000/" // URL of the Middleman API
 
 const humidityData = [];
 const temperatureData = [];
@@ -126,6 +126,12 @@ function updateChart(labelText, dataArray, chartObj, unit) {
         chartObj.options.scales.x.time.unit = "hour";
         chartObj.options.scales.x.time.displayFormats.hour = 'dd.MM';
         chartObj.options.scales.x.min = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 days in ms
+    }
+
+    else if (unit == "Month") {
+        chartObj.options.scales.x.time.unit = "month";
+        chartObj.options.scales.x.time.displayFormats.hour = 'dd.MM.yyyy';
+        chartObj.options.scales.x.min = ""; // no limit for months to avoid waiting time
     }
 
     chartObj.data.datasets[0].data[data.length - 1] = dataArray[dataArray.length - 1];

@@ -26,8 +26,10 @@
 |![Arduino](https://img.shields.io/badge/-Arduino-00979D?style=for-the-badge&logo=Arduino&logoColor=white) | Arduino | [:one:](#arduino) |
 |![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white) | Database | [:two:](#database) |
 | ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi) | Middleman-API | [:three:](#middleman-api) |
-| | Webpage | [:four:](#webpage) |
+| ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white) | Webpage | [:four:](#webpage) |
 | | Settings | [:five:](#settings) |
+
+<br>**Please note:** While creating the Project, I did not intend to make it very secrue. If you plan on making it publicly avaible or have the used ports open, please modify each code to make it secrue!
 
 
 ## Arduino
@@ -59,7 +61,7 @@ In this Section we will talk about how to set up the Arduino Side of the Project
 
 
 ### Circuit/Circuit Diagram/Schematic Diagram:<br>
-<img src="./CircuitMeasureDeviceTranslated.png" width="50%">
+<img src="https://i.imgur.com/tlFnFwq.png" width="50%">
 
 This plan was translated to English from German. 
 <br>For Full Image click [**this link**](https://i.imgur.com/tlFnFwq.png)
@@ -79,6 +81,8 @@ This plan was translated to English from German.
     - DHT sensor libary
 4. You can now insert the Code in **./src/main.cpp**
 
+#### Used Port for the Arduino API: 4719
+
 ## Database
 ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 ### I use SQLite as Database.
@@ -90,7 +94,7 @@ This plan was translated to English from German.
     - If the saved values get older then 2 minutes, they get averaged and saved under "hours".
     - The old values get deleted from minutes.
 
-        -> This is to reduce Database size and space consumption.
+        -> This is to decrease Database size and space consumption.
 - Every time unit has the same process. 
     - Minutes after 2 minutes of age -> averaged into hours
     - Hours after 2 days of age -> averaged into days
@@ -106,6 +110,17 @@ This plan was translated to English from German.
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 
+### The Middleman-API is made in Python with FastAPI and APScheduler.
+
+APScheduler uses a "AsyncIOScheduler" to schedule a event which every minute queries current values from the Arduino API. The interval can be changed.
+Right after recieving the new values it builds up a connection with the Database to average and delete old values and append the new values.
+
+When the Webpage queries the values, the Python Script gets all the saved values from the requested type from the Database and returns it to the Webpage.
+
+The Middleman could potentially quiery new values constantly from the Arduino. The Arduino refreshes his values constantly.
+
+#### Used Port for the Middleman-API: 8000
+<br>
 
 ## Webpage
 ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white)
@@ -113,6 +128,23 @@ This plan was translated to English from German.
 ![CSS3](https://img.shields.io/badge/css3-%231572B6.svg?style=for-the-badge&logo=css3&logoColor=white)
 ![Chart.js](https://img.shields.io/badge/chart.js-F5788D.svg?style=for-the-badge&logo=chart.js&logoColor=white)
 
+The Main part of the Site is split into 6 columms. One for each value being displayed.<br>
+On the left there is a yet almost empty Sidebar and on the top a Header.
+
+The values recieved from the Middleman-API are getting displayed in a Line Chart using Chart.js.<br>
+Under each Chart are buttons to change the time unit.
+
+Each Chart has a Min object for the X-Axis (time), so it wont display values older then a hour.<br>
+
+
 
 ## Settings
+Using the Webpage you are able to adjust some settings on the Arduino.<br>
+With a POST request you can change them to the opposite (toggle) or with a GET you can see the current state.
 
+The Webpage also allows easier control of them.
+
+Here is a Overview of them:
+| | | |
+|:--|:--|:--|
+| | | |

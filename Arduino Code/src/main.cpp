@@ -11,7 +11,7 @@
 
 // WiFi credentials.
 const char* WIFI_SSID = "INSERT WIFI SSID";
-const char* WIFI_PASS = "INSERT WIFI PASSWORD";                                                                                                                                                                                                                               
+const char* WIFI_PASS = "INSERT WIFI PASSWORD";                                                                                                                                                                                                                       
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -30,8 +30,11 @@ DHT dht(PIN_TEMPERATURE_SENSOR, DHT11);
 static AsyncWebServer server(4719); // Port: 4719
 static AsyncCorsMiddleware cors;
 
-int humidity;                                                                                       
-int temperature;
+String version = "2.4"; // Version of the MeasureDevice Arduino Side
+String buildDate = "2025-03-10"; // Build Date | PLEASE SET EACH TIME BEFORE BUILDING
+
+float humidity;                                                                                       
+float temperature;
 float light;
 int light_percentage;
 int heatIndex;
@@ -57,59 +60,11 @@ float lastDebounceTime;
 float debounceDelay = 50;
 
 bool lightDisabled = false;
+bool monitorDisabled = false;
 bool disabled = false;
 
 
-
 // Utility Classes
-
-void LoadingScreenDisplay(String message, String secondMessage = "", bool waitText = true) { // FIX POSITIONS IN FUTURE
-  display.clearDisplay();
-  int16_t x1, y1;
-  uint16_t w, h;
-  float width = display.width();
-  float height = display.height();
-  display.setTextColor(WHITE);
-
-  int msgHeight, secMsgHeight, waitHeight = 0;
-
-  if (waitText == false && secondMessage == "") {
-    msgHeight = 0;
-  }
-  else if (waitText == false) {
-    msgHeight = (height / 2) - 10;
-    secMsgHeight = (height / 2) + 10;
-  }
-  else if (secondMessage == "") {
-    msgHeight = (height / 2) - 15;
-    waitHeight = (height / 2) + 15;
-  }
-  else {
-    msgHeight = (height / 2) - 20;
-    secMsgHeight = (height / 2) - 10;
-    waitHeight = (height / 2) + 10;
-  }
-
-  if (message == "") {
-    display.getTextBounds(message, 0, msgHeight, &x1, &y1, &w, &h);
-    display.setCursor((width - w) / 2, (height - h));
-    display.print(message);
-  }
-
-  if (secondMessage != "") {
-    display.getTextBounds(secondMessage, 0, secMsgHeight, &x1, &y1, &w, &h);
-    display.setCursor((width - w) / 2, (height - h) - msgHeight);
-    display.print(secondMessage);
-  }
-
-  if (waitText == true) {
-    display.getTextBounds("Please wait...", 0, waitHeight, &x1, &y1, &w, &h);
-    display.setCursor((width - w) / 2 - 1, h);
-    display.print("Please wait...");
-  }
-  
-  display.display();
-}
 
 void connectToWiFi() {
     int tries = 0; // 15 tries before reconnect
@@ -182,6 +137,20 @@ void disabledToggle(String toToggle) {
     }
   }
 
+  else if (toToggle == "monitor") {
+    if (monitorDisabled == false) {
+      monitorDisabled = true;
+
+      display.clearDisplay();
+      display.display();
+      delay(300);
+    }
+    else {
+      monitorDisabled = false;
+      delay(300);
+    }
+  }
+
   else if (toToggle == "light") {
     if (lightDisabled == false) {
       lightDisabled = true;
@@ -196,6 +165,7 @@ void disabledToggle(String toToggle) {
       delay(300);
     }
   }
+
   delay(200);
 }
 
@@ -228,8 +198,13 @@ void debounce (int reading, enum button btnType, int& buttonState, int& lastButt
         }
         else if (btnType == MID) {
           // Check if was disabled before and enable then
-          if (mode == 2) {
+          if (disabled) {
             disabledToggle("all");
+          }
+
+          // Check if was monitorDisabled before and enable then
+          if (monitorDisabled) {
+            disabledToggle("monitor");
           }
 
           // Return to *Start* of Main Menu
@@ -282,27 +257,29 @@ void setup() {
 
   server.addMiddleware(&cors);
 
-  server.on("/test", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Hello, world");
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Arduino is running.");
+  });
+
+  server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["name"] = "MeasureDeviceArduino";
+    doc["version"] = version;
+    doc["buildDate"] = buildDate;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
   });
 
   server.on("/lightToggle", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc;
     doc["name"] = "light";
     doc["status"] = (!lightDisabled); // True = Light is on
     String output;
     serializeJson(doc, output);
     request->send(200, "application/json", output);
-  });
-
-  server.on("/getMode", HTTP_GET, [](AsyncWebServerRequest *request) {
-    JsonDocument doc;
-    doc["name"] = "modus";
-    doc["modus"] = String(mode);
-    doc["selected"] = String(selectedMode);
-    String output;
-    serializeJson(doc, output);
-    request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
   server.on("/lightToggle", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -318,8 +295,51 @@ void setup() {
     serializeJson(doc, output);
     request->send(200, "application/json", output);
   });
+
+  server.on("/monitorToggle", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
+    JsonDocument doc;
+    doc["name"] = "monitor";
+    doc["status"] = (!monitorDisabled); // True = Monitor is on
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
+  });
+
+  server.on("/monitorToggle", HTTP_POST, [](AsyncWebServerRequest *request) {
+    bool before = (!monitorDisabled);
+    disabledToggle("monitor");
+    delay(200);
+
+    JsonDocument doc;
+    doc["name"] = "monitor";
+    doc["before"] = before;
+    doc["status"] = (!monitorDisabled); // True = Monitor is on
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+
+  server.on("/disableArduino", HTTP_POST, [](AsyncWebServerRequest *request) {
+    disabledToggle("all");
+    delay(200);
+  });
+
+  server.on("/getMode", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
+    JsonDocument doc;
+    doc["name"] = "mode";
+    doc["mode"] = String(mode);
+    doc["selected"] = String(selectedMode);
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
+  });
  
   server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc; 
 
     doc["value"] = String(humidity);
@@ -329,9 +349,11 @@ void setup() {
     serializeJson(doc, output);
     
     request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
   server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc; 
 
     doc["value"] = String(temperature);
@@ -341,9 +363,11 @@ void setup() {
     serializeJson(doc, output);
     
     request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
   server.on("/heatIndex", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc; 
 
     doc["value"] = String(heatIndex);
@@ -353,14 +377,16 @@ void setup() {
     serializeJson(doc, output);
     
     request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
   server.on("/voltage", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc; 
     // Five -> value = 5V | Three = 3V | raw = 0-1023
     doc["raw"] = String(voltage);
     // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V):
-    doc["value"] = String(voltage * (5.0 / 1023.0)); // if 5V
+    doc["value"] = String(voltage * (5.0 / 1023.0)); // if 5V | I use 5V so I set as "value"
     doc["three"] = String(voltage * (3.3 / 1023.0)); // if 3V
     doc["unit"] = "V";
 
@@ -368,10 +394,12 @@ void setup() {
     serializeJson(doc, output);
     
     request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
 
   server.on("/light", HTTP_GET, [](AsyncWebServerRequest *request) {
+    digitalWrite(PIN_FUNCTIONAL_LED, HIGH);
     JsonDocument doc; 
 
     doc["value"] = String(light_percentage); // Value in %
@@ -383,9 +411,10 @@ void setup() {
     serializeJson(doc, output);
     
     request->send(200, "application/json", output);
+    digitalWrite(PIN_FUNCTIONAL_LED, LOW);
   });
 
-  server.begin(); // 192.168.?.1
+  server.begin(); // 192.168.?.?:4719
 }
 
 void updateDisplay() {
@@ -396,11 +425,11 @@ void updateDisplay() {
   display.setTextWrap(false);
   display.setTextColor(WHITE);
 
-  display.getTextBounds("Mini-Dahsboard:", 0, 0, &x1, &y1, &w, &h);
+  String headerText = "MeasureDevice " + version;
+  display.getTextBounds(headerText, 0, 0, &x1, &y1, &w, &h);
   display.setCursor((width - w) / 2, 0);
-  display.print("Mini-Dahsboard:");
+  display.print(headerText);
 
-  // display.print("\nModus: " + String(modus));   Dont need it atm
   IPAddress ip = WiFi.localIP();
   String wifiText = "\nIP: " + String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]) + "  " + ((WiFi.status() == WL_CONNECTED) ? "+" : "-"); // Wifi Connected = + | Wifi not connected = - | Example: "IP: 192.168.100.1  +"
   display.getTextBounds(wifiText, 0, 10, &x1, &y1, &w, &h);
@@ -433,10 +462,10 @@ void updateDisplay() {
     display.drawRect(0, 30, width, 30, WHITE);
   }
   else if (mode == 1) {
-    display.print("\nLuftfeuchtigkeit: " + String(humidity) + "%\nTemperatur: " + String(temperature));
+    display.print("\nLuftfeuchtigkeit: " + String(int(humidity)) + "%\nTemperatur: " + String(int(temperature)));
     display.print((char)247);
     display.print("C\nLicht: " + String(light_percentage) + "%");
-    display.print("\nHeat-Index: " + String(heatIndex));
+    display.print("\nHeat-Index: " + String(int(heatIndex)));
     display.print((char)247);
     display.print("C");
   }
@@ -446,8 +475,8 @@ void updateDisplay() {
 
 void loop() {
   if (!disabled) {
-    humidity = int(dht.readHumidity()); // humidity
-    temperature = int(dht.readTemperature()); // temperature
+    humidity = dht.readHumidity(); // humidity
+    temperature = dht.readTemperature(); // temperature
     light = analogRead(PIN_LIGHT_SENSOR); // light
     light_percentage = int((light / 4095) * 100); // light percentage
     voltage = float(analogRead(A0)); // analog voltage - goes from 0-1023 - 1023 is 5V (or 3V if Board is 3V), 0 is 0V  #! Maybe Incorrect, please check if correct
@@ -469,5 +498,7 @@ void loop() {
   debounce(readingRight, RIGHT, rightButtonState, lastRightButtonState);
   debounce(readingMid, MID, midButtonState, lastMidButtonState);
 
-  if (!disabled) { updateDisplay(); }
+  if (!disabled && !monitorDisabled) { 
+    updateDisplay(); 
+  }
 }
